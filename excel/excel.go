@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -132,13 +133,9 @@ func (e *Exporter) Export(data interface{}) (io.Reader, error) {
 
 		Header[i] = fieldName
 	}
-	fmt.Println("tsFields:", tsFields)
 
 	//write header row
-	// err := file.SetSheetRow(e.sheetname, "A1", &Header)
-	// if err != nil {
-	// 	return nil, err
-	// }
+	file.SetSheetRow(e.sheetname, "A1", &Header)
 
 	//write rows
 	for i := 0; i < refValue.Len(); i++ {
@@ -159,16 +156,7 @@ func (e *Exporter) Export(data interface{}) (io.Reader, error) {
 				case fieldTypeOf == reflect.TypeOf(decimal.Decimal{}):
 					row[j] = fieldValue.Interface().(decimal.Decimal).StringFixed(*e.decimalDigits)
 				case slices.Contains(tsFields, j):
-					// switch {
-					// case fieldTypeOf == reflect.TypeOf(time.Time{}):
-					// fmt.Println("time:", fieldValue.Interface().(time.Time).Unix())
-					// row[j] = fieldValue.Interface().(time.Time).In(e.timezone).Format("2006-01-02 15:04:05")
-					// row[j] = time.Now().In(e.timezone).Format("2006-01-02 15:04:05")
-					// row[j] = "xxx"
-
-					// case fieldKind >= reflect.Int && fieldKind <= reflect.Int64:
 					row[j] = time.Unix(fieldValue.Int(), 0).In(e.timezone).Format("2006-01-02 15:04:05")
-					// }
 
 				default:
 					row[j] = fieldValue.Interface()
@@ -193,63 +181,52 @@ func (e *Exporter) Export(data interface{}) (io.Reader, error) {
 
 				// }
 			}
-
 		}
-		fmt.Println("row:", row)
-		// err := file.SetSheetRow(e.sheetname, "A"+strconv.Itoa(i+2), &row)
-		// // return nil, errors.New("dkfd")
-		// if err != nil {
-		// 	return nil, err
-		// }
+
+		file.SetSheetRow(e.sheetname, "A"+strconv.Itoa(i+2), &row)
 	}
 
 	//remove omited columns
-	// offset := 0
+	offset := 0
 
-	// for _, col := range omitFields {
+	for _, col := range omitFields {
 
-	// 	column := string(rune(col + 65 - offset))
+		column := string(rune(col + 65 - offset))
 
-	// 	err := file.RemoveCol(e.sheetname, column)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// 	offset++
-	// }
+		file.RemoveCol(e.sheetname, column)
 
-	// //format column width
-	// cols, err := file.GetCols(e.sheetname)
+		offset++
+	}
 
-	// if err != nil {
-	// 	return nil, err
-	// }
+	//format column width
+	cols, err := file.GetCols(e.sheetname)
 
-	// for idx, col := range cols {
-	// 	largestWidth := 0
+	if err != nil {
+		return nil, err
+	}
 
-	// 	for _, rowCell := range col {
+	for idx, col := range cols {
+		largestWidth := 0
 
-	// 		// cellWidth := utf8.RuneCountInString(rowCell) + 2 // + 2 for margin
+		for _, rowCell := range col {
 
-	// 		cellWidth := len(rowCell) + 2 //chinese char is counted as 3
+			// cellWidth := utf8.RuneCountInString(rowCell) + 2 // + 2 for margin
 
-	// 		if cellWidth > largestWidth {
-	// 			largestWidth = cellWidth
-	// 		}
-	// 	}
+			cellWidth := len(rowCell) + 2 //chinese char is counted as 3
 
-	// 	name, err := excelize.ColumnNumberToName(idx + 1)
+			if cellWidth > largestWidth {
+				largestWidth = cellWidth
+			}
+		}
 
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
+		name, err := excelize.ColumnNumberToName(idx + 1)
 
-	// 	err = file.SetColWidth(e.sheetname, name, name, float64(largestWidth))
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
+		if err != nil {
+			return nil, err
+		}
 
-	// }
+		file.SetColWidth(e.sheetname, name, name, float64(largestWidth))
+	}
 
 	ioR, err := file.WriteToBuffer()
 
