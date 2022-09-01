@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/shopspring/decimal"
 	"github.com/siddontang/go/log"
@@ -15,24 +16,31 @@ import (
 	"golang.org/x/exp/slices"
 )
 
+// Exporter example
+// type isdemo bool
+//
+// func (d isdemo) ExcelString() string {
+// 	if d {
+// 		return "测试帐号"
+// 	}
+// 	return "正式帐号"
+// }
+
 type ExcelExport interface {
 	ExcelString() string
 }
 
-type IsDemoAccount bool
-
-func (d IsDemoAccount) ExcelString() string {
-	if d {
-		return "测试帐号"
-	}
-	return "正式帐号"
-}
-
 type Exporter struct {
-	timezone      *time.Location
-	sheetname     string
-	decimalDigits *int32
+	timezone       *time.Location
+	sheetname      string
+	decimalDigits  *int32
+	datetimeformat string
 }
+
+// default sheetname is "Sheet1"
+// default timezone is "Asia/Hong_Kong"
+// default decimal digits is 2
+// default datetime format is "2006-01-02 15:04:05"
 
 func New(options ...func(*Exporter)) *Exporter {
 	e := &Exporter{}
@@ -49,6 +57,9 @@ func New(options ...func(*Exporter)) *Exporter {
 		e.decimalDigits = new(int32)
 		*e.decimalDigits = 2
 	}
+	if e.datetimeformat == "" {
+		e.datetimeformat = "2006-01-02 15:04:05"
+	}
 	return e
 }
 func WithTimezone(timezone string) func(*Exporter) {
@@ -62,20 +73,27 @@ func WithTimezone(timezone string) func(*Exporter) {
 	}
 }
 
+func WithDecimalDigits(digits int32) func(*Exporter) {
+	return func(e *Exporter) {
+		e.decimalDigits = &digits
+	}
+}
+
 func WithSheetname(sheetname string) func(*Exporter) {
 	return func(e *Exporter) {
 		e.sheetname = sheetname
 	}
 }
 
+// use standard time format, a mulformed datetime format will cause wrong output without warning
+func WithDatetimeFormat(format string) func(*Exporter) {
+	return func(e *Exporter) {
+		e.datetimeformat = format
+	}
+}
+
+// data must be a non empty slice of struct
 func (e *Exporter) Export(data interface{}) (io.Reader, error) {
-	// loc, _ := time.LoadLocation("Asia/Hong_Kong")
-	// sheetname := "报表(导出时间:" + time.Now().In(e.timezone).Format("2006-01-02 15:04:05") + ")"
-	// excelExportType := reflect.TypeOf((ExcelExport)(nil)).Elem()
-
-	file := excelize.NewFile()
-
-	file.SetSheetName("Sheet1", e.sheetname)
 
 	// // check if the data is a slice
 	if reflect.TypeOf(data).Kind() != reflect.Slice {
@@ -110,15 +128,18 @@ func (e *Exporter) Export(data interface{}) (io.Reader, error) {
 	*/
 
 	for i := 0; i < fieldCount; i++ {
+
 		//analyze every field tag of the struct
 		field := refType.Field(i)
 		fieldName := field.Name
 
 		if excelTag, ok := field.Tag.Lookup("excel"); ok {
 			tags := strings.Split(excelTag, ",")
+
 			for _, tag := range tags {
 				fmt.Println("tagis:", tag)
 				if tag == "omit" {
+
 					omitFields = append(omitFields, i)
 				}
 				if tag == "timestamp" {
@@ -127,6 +148,7 @@ func (e *Exporter) Export(data interface{}) (io.Reader, error) {
 				if strings.HasPrefix(tag, "title=") {
 					fieldName = tag[6:]
 				}
+
 			}
 
 		}
@@ -134,8 +156,14 @@ func (e *Exporter) Export(data interface{}) (io.Reader, error) {
 		Header[i] = fieldName
 	}
 
+	file := excelize.NewFile()
+
+	file.SetSheetName("Sheet1", e.sheetname)
 	//write header row
-	file.SetSheetRow(e.sheetname, "A1", &Header)
+	err := file.SetSheetRow(e.sheetname, "A1", &Header)
+	if err != nil {
+		return nil, fmt.Errorf("error set sheet header row: %v", err)
+	}
 
 	//write rows
 	for i := 0; i < refValue.Len(); i++ {
@@ -156,34 +184,25 @@ func (e *Exporter) Export(data interface{}) (io.Reader, error) {
 				case fieldTypeOf == reflect.TypeOf(decimal.Decimal{}):
 					row[j] = fieldValue.Interface().(decimal.Decimal).StringFixed(*e.decimalDigits)
 				case slices.Contains(tsFields, j):
-					row[j] = time.Unix(fieldValue.Int(), 0).In(e.timezone).Format("2006-01-02 15:04:05")
+					switch {
+					case fieldKind <= reflect.Int64 && fieldKind >= reflect.Int:
+						row[j] = time.Unix(fieldValue.Int(), 0).In(e.timezone).Format(e.datetimeformat)
+						//case time.Time
+					case fieldTypeOf == reflect.TypeOf(time.Time{}):
+						row[j] = fieldValue.Interface().(time.Time).In(e.timezone).Format(e.datetimeformat)
+
+					}
 
 				default:
 					row[j] = fieldValue.Interface()
 				}
-
-				// if slices.Contains(tsFields, j) {
-				// 	row[j] = time.Unix(refValue.Index(i).Field(j).Interface().(int64), 0).In(e.timezone).Format("2006-01-02 15:04:05")
-				// } else {
-
-				// 	typeof := reflect.TypeOf(refValue.Index(i).Field(j).Interface())
-
-				// 	if typeof == reflect.TypeOf(decimal.Decimal{}) {
-
-				// 		row[j] = refValue.Index(i).Field(j).Interface().(decimal.Decimal).InexactFloat64() //what if float64 is not exact?
-
-				// 	} else if typeof.ConvertibleTo(excelExportType) {
-				// 		row[j] = refValue.Index(i).Field(j).Interface().(ExcelExport).ExcelString()
-
-				// 	} else {
-				// 		row[j] = refValue.Index(i).Field(j).Interface()
-				// 	}
-
-				// }
 			}
 		}
 
-		file.SetSheetRow(e.sheetname, "A"+strconv.Itoa(i+2), &row)
+		err := file.SetSheetRow(e.sheetname, "A"+strconv.Itoa(i+2), &row)
+		if err != nil {
+			return nil, fmt.Errorf("error set data row %d: %v", i, err)
+		}
 	}
 
 	//remove omited columns
@@ -193,12 +212,16 @@ func (e *Exporter) Export(data interface{}) (io.Reader, error) {
 
 		column := string(rune(col + 65 - offset))
 
-		file.RemoveCol(e.sheetname, column)
+		err := file.RemoveCol(e.sheetname, column)
+
+		if err != nil {
+			return nil, fmt.Errorf("error remove column %s: %v", column, err)
+		}
 
 		offset++
 	}
 
-	//format column width
+	//set column width
 	cols, err := file.GetCols(e.sheetname)
 
 	if err != nil {
@@ -206,13 +229,19 @@ func (e *Exporter) Export(data interface{}) (io.Reader, error) {
 	}
 
 	for idx, col := range cols {
-		largestWidth := 0
+		var largestWidth float64
 
 		for _, rowCell := range col {
 
-			// cellWidth := utf8.RuneCountInString(rowCell) + 2 // + 2 for margin
-
-			cellWidth := len(rowCell) + 2 //chinese char is counted as 3
+			var cellWidth float64
+			r := utf8.RuneCountInString(rowCell)
+			l := len(rowCell)
+			if r != l {
+				//utf8 chars 's width x 1.5 + 2 margin
+				cellWidth = float64(r)*1.5 + 2
+			} else {
+				cellWidth = float64(l) + 2
+			}
 
 			if cellWidth > largestWidth {
 				largestWidth = cellWidth
@@ -225,7 +254,10 @@ func (e *Exporter) Export(data interface{}) (io.Reader, error) {
 			return nil, err
 		}
 
-		file.SetColWidth(e.sheetname, name, name, float64(largestWidth))
+		err = file.SetColWidth(e.sheetname, name, name, float64(largestWidth))
+		if err != nil {
+			return nil, fmt.Errorf("error set column width %d: %v", idx+1, err)
+		}
 	}
 
 	ioR, err := file.WriteToBuffer()
