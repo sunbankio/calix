@@ -1,4 +1,4 @@
-package excel
+package calix
 
 import (
 	"bufio"
@@ -56,7 +56,7 @@ func TestExcel(t *testing.T) {
 		},
 	}
 
-	excel := New(WithTimezone("Asia/Hong_Kong"), WithSheetname("报表2"), WithDatetimeFormat("2006年01月02日15:04:05"))
+	excel := New(WithTimezone("Asia/Hong_Kong"), WithSheetName("报表2"), WithDatetimeFormat("2006年01月02日15:04:05"))
 	reader, err := excel.Export(data)
 	if err != nil {
 		t.Error(err)
