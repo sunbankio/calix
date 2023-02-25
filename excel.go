@@ -1,4 +1,4 @@
-package calix
+package excelwriter
 
 import (
 	"fmt"
@@ -10,7 +10,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/shopspring/decimal"
-	"github.com/siddontang/go/log"
 	"github.com/xuri/excelize/v2"
 	"golang.org/x/exp/slices"
 )
@@ -55,7 +54,7 @@ func WithTimezone(timezone string) func(*Exporter) {
 	return func(e *Exporter) {
 		loc, err := time.LoadLocation(timezone)
 		if err != nil {
-			log.Errorf("error load timezone %s : %v", timezone, err)
+			fmt.Printf("[excelExporter] invalid timezone: %s, use local timezone instead", timezone)
 		} else {
 			e.timezone = loc
 		}
@@ -126,7 +125,7 @@ func (e *Exporter) Export(data interface{}) (io.Reader, error) {
 			tags := strings.Split(excelTag, ",")
 
 			for _, tag := range tags {
-				fmt.Println("tagis:", tag)
+				// fmt.Println("tagis:", tag)
 				if tag == "omit" {
 
 					omitFields = append(omitFields, i)

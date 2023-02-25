@@ -1,4 +1,4 @@
-package calix
+package excelwriter
 
 import "errors"
 
