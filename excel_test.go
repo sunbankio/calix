@@ -26,17 +26,17 @@ func (d isdemo) ExcelColor() string {
 	return "green"
 }
 
-func TestExcel(t *testing.T) {
-	type person struct {
-		Name       string `excel:"title=姓名"`
-		Age        int
-		Birthday   time.Time       `excel:"title=B-Day,timestamp"`
-		Salary     decimal.Decimal `excel:"title=工资"`
-		EntryTime  int64           `excel:"title=xy,timestamp,omit"`
-		IsDemo     isdemo          `excel:"title=是否测试帐号"`
-		PureNumber int64           `excel:"title=纯数字"`
-	}
+type person struct {
+	Name       string `excel:"title=姓名"`
+	Age        int
+	Birthday   time.Time       `excel:"title=B-Day,timestamp"`
+	Salary     decimal.Decimal `excel:"title=工资"`
+	EntryTime  int64           `excel:"title=xy,timestamp,omit"`
+	IsDemo     isdemo          `excel:"title=是否测试帐号"`
+	PureNumber int64           `excel:"title=纯数字"`
+}
 
+func TestExcel(t *testing.T) {
 	data := []person{
 		{
 			Name:       "张三",
@@ -65,6 +65,43 @@ func TestExcel(t *testing.T) {
 	//write reader to file
 	_ = WriteToFile(reader, "test.xlsx")
 
+}
+
+type ValidationTestStruct struct {
+	Name     string          `excel:"title=Name;validation={'type':'textLength','operator':'between','formula1':'5','formula2':'10'}"`
+	Price    decimal.Decimal `excel:"title=Price;validation={'type':'decimal','operator':'between','formula1':'10','formula2':'100'}"`
+	Category string          `excel:"title=Category;validation={'type':'list','allowList':['A','B','C']}"`
+}
+
+func TestValidation(t *testing.T) {
+	data := []ValidationTestStruct{
+		{
+			// Valid data
+			Name:     "John Doe",    // 8 chars - valid
+			Price:    decimal.NewFromFloat(50.0), // valid
+			Category: "A",           // valid
+		},
+		{
+			// Invalid data but will still be written
+			Name:     "Bob",         // 3 chars - too short
+			Price:    decimal.NewFromFloat(5.0),  // too low
+			Category: "D",           // not in list
+		},
+	}
+
+	excel := New(
+		WithSheetName("Validation Test"),
+	)
+
+	reader, err := excel.Export(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Write to file for manual inspection
+	if err := WriteToFile(reader, "validation_test.xlsx"); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func WriteToFile(reader io.Reader, filename string) error {
